@@ -1,0 +1,73 @@
+---
+- hosts: all
+  remote_user: {{ ansible_ssh_user | default('root') }}
+  tasks:
+
+    - name: Reset DNS
+      lineinfile:
+        path: /etc/resolv.conf
+        regexp: '^nameserver'
+        line: 'nameserver {{ aux_dns_ip }}'
+        mode: 0644
+        owner: root
+        group: root
+      when: aux_dns_ip is defined
+      tags:
+        - reset_dns
+
+    - name: remove docker
+      yum:
+          name: docker
+          state: absent
+      tags:
+        - reset_docker
+
+    - name: remove docker logical volume
+      shell: lvremove -f /dev/{{ aux_docker_pool_vg }}/{{ aux_docker_pool_name | default('docker-pool') }}
+      when: aux_docker_pool_name is defined and aux_docker_pool_vg is defined
+      tags:
+        - reset_docker
+
+    - name: Install docker latest
+      yum:
+          name: docker
+          state: present
+      when: docker_version is undefined
+      tags:
+        - reset_docker
+
+    - name: Install docker Version {{ docker_version }}
+      yum:
+          name: docker{{ '-' + docker_version }}
+          state: present
+      when: docker_version is defined
+      tags:
+        - reset_docker
+
+    - name: docker storage setup file
+      shell: |
+          cat << EOF > /etc/sysconfig/docker-storage-setup
+          VG = {{ aux_docker_pool_vg }}
+          DATA_SIZE = {{ aux_docker_pool_size }}
+          EOF
+      when: aux_docker_pool_size is defined and aux_docker_pool_vg is defined
+      tags:
+        - reset_docker
+
+    - name: remove old docker storage file
+      shell: rm -rf /etc/sysconfig/docker-storage
+      tags:
+        - reset_docker
+    
+    - name: run docker storage setup
+      shell: /usr/bin/docker-storage-setup
+      tags:
+        - reset_docker
+    
+    - name: enable and start docker daemon
+      systemd:
+          name: docker
+          state: started
+          enabled: True
+      tags:
+        - reset_docker

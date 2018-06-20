@@ -1,0 +1,64 @@
+---
+- hosts: all
+  remote_user: {{ ansible_ssh_user | default('root') }}
+
+  tasks:
+
+    - name: reset repos by disabling all of them
+      rhsm_repository:
+        name: "*"
+        state: disabled
+      tags:
+        - reset_subscriptions
+
+    - name: enable needed repos
+      rhsm_repository:
+        name: "{{ item }}"
+        state: enabled
+      with_items:
+        - "rhel-7-server-rpms"
+        - "rhel-7-server-extras-rpms"
+        - "rhel-7-server-ose-{{ openshift_release | replace('v', '')}}-rpms"
+        - "rhel-7-fast-datapath-rpms"
+      tags:
+        - reset_subscriptions
+
+    - name: clean cache
+      yum:
+        name: "*"
+        update_cache: yes
+      tags:
+        - install_requirements
+
+    - name: install base packages
+      yum:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - bash-completion
+        - net-tools
+        - wget
+        - git
+        - bind-utils
+        - iptables-services
+        - bridge-utils
+        - bash-completion
+        - kexec-tools
+        - sos
+        - psacct
+      tags:
+        - install_requirements
+
+    - name: update all packages
+      yum:
+        name: "*"
+        state: latest
+      tags:
+        - install_requirements
+
+    - name: reboot node after update
+      command: /sbin/shutdown -r +1
+      async: 0
+      poll: 0
+      ignore_errors: true
+
